@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creta Viewer Pro</title>
+<style>
+body{margin:0;font-family:system-ui;background:#0e0e0e;color:#fff}
+.top{padding:16px;background:#000;position:sticky;top:0;border-bottom:1px solid #222}
+input{width:100%;padding:14px;border-radius:12px;border:1px solid #333;background:#1a1a1a;color:#fff;font-size:16px;outline:none;margin-top:10px}
+.wrap{padding:12px;max-width:700px;margin:auto}
+.card{background:#1d1d1f;border:1px solid #2a2a2a;border-radius:14px;padding:14px;margin-bottom:10px}
+.num{font-size:20px;font-weight:800}
+.meta{color:#999;font-size:13px;margin-top:4px}
+.badge{background:#ff6a00;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.row{display:flex;justify-content:space-between;align-items:center}
+button{padding:6px 12px;border-radius:8px;border:0;background:#333;color:#fff}
+</style>
+</head>
+<body>
+<div class="top">
+<h2 style="margin:0">Creta Viewer 🔥</h2>
+<input id="s" placeholder="Mobile / Naam / Circle search karo...">
+<div id="c" style="color:#888;font-size:12px;margin-top:8px">Loading...</div>
+</div>
+<div class="wrap" id="list"></div>
+<script>
+let data=[
+{"mobile":"9889662072","name":"Vinod Kumar","circle":"UP EAST"}
+];
+function render(d){
+ document.getElementById('c').innerText=d.length+" records";
+ document.getElementById('list').innerHTML=d.slice(0,300).map(x=>`
+ <div class="card"><div class="row"><span class="badge">${x.circle||'IN'}</span><button onclick="navigator.clipboard.writeText('${x.mobile}');this.innerText='Copied'">Copy</button></div><div class="num">${x.mobile}</div><div class="meta">${x.name||''}<br>${x.circle||''}</div></div>`).join('');
+}
+document.getElementById('s').addEventListener('input',e=>{
+ let q=e.target.value.toLowerCase();
+ if(!q)return render(data);
+ render(data.filter(i=>(i.mobile+i.name+i.circle).toLowerCase().includes(q)));
+});
+render(data);
+</script>
+</body>
+</html>

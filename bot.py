@@ -9,7 +9,45 @@ def home(): return "Bot is Alive!"
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+import os
+from flask import Flask
+from threading import Thread
+import telebot
+from telebot import types
 
+# --- 1. WEB SERVER (Isi ko UptimeRobot ping karega) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is Alive! ✅"
+
+def run_web():
+    app.run(host='0.0.0.0', port=8080)
+
+Thread(target=run_web).start()
+
+# --- 2. TELEGRAM BOT ---
+BOT_TOKEN = "8773409457:AAH7kSoJdeuDHwfZclKp1FhOY4e-kVZ6guo"  # @BotFather se jo token liya tha
+bot = telebot.TeleBot(BOT_TOKEN)
+
+@bot.message_handler(commands=['start'])
+def start(m):
+    bot.reply_to(m, "🔥 Bot is Online 24/7!\nVideo ka link bhejo, mai download karke dunga.")
+
+@bot.message_handler(func=lambda m: True)
+def handle_link(m):
+    url = m.text
+    if "http" not in url:
+        bot.reply_to(m, "Bhai valid video link bhejo!")
+        return
+    
+    bot.reply_to(m, f"⏳ Downloading...\n{url}\n\n[Abhi demo reply hai, yahan tumhara download code ayega]")
+    # Yahan tumhara asli yt-dlp / insta download wala code lagega
+    # bot.send_video(m.chat.id, video_file)
+
+print("Bot Started + Web Server Started")
+bot.infinity_polling()
 threading.Thread(target=run_flask).start()
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes

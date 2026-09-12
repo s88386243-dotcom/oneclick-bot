@@ -1,4 +1,6 @@
 import os
+import os
+os.system("pip install -U yt-dlp") # Ye YouTube wala error fix karega
 import telebot
 import os
 os.system("pip install -U yt-dlp") # Ye YouTube wala error fix karega

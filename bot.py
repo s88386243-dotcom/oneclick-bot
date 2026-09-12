@@ -1,5 +1,7 @@
 import os
 import telebot
+import os
+os.system("pip install -U yt-dlp") # Ye YouTube wala error fix karega
 from flask import Flask
 from telebot import types
 from threading import Thread

@@ -2,3 +2,4 @@ python-telegram-bot==20.7
 yt-dlp>=2024.05.27
 qrcode[pil]
 requests
+Flask

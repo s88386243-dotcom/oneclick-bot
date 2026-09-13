@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- CONFIG ---
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "8773409457:AAG9VvGq0mgsJ0hpiGrIm_zoSRXglhLn4_M" # Render pe env me daal dena better hai
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "8773409457:AAFtEMf4Nyuz3bun00jbuwoop2S2CmVY5S0" # Render pe env me daal dena better hai
 ADMIN_ID = 7166502503
 VAULT_ID = -1004353152847
 UPI_ID = "s.maddheshia@ptaxis"

@@ -113,8 +113,17 @@ Pay karke *I Have Paid* dabao.
     elif data.startswith("paid_"):
         _, order_id, key = data.split("_")
         plan = PLANS[key]
-        admin_msg = f"💰 *New Payment Alert!*\n\n👤 User: {q.from_user.first_name} (`{uid}`)\n📦 Plan: {plan['label']}\n💰 Amount: ₹{plan['price']}\n🆔 Order: `{order_id}`\n\nApprove: `/approve {uid} {plan['days']}`"
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
+        admin_msg = f"💰 *New Payment Alert!*\n\n👤 User: {q.from_user.first_name} (`{uid}`)\n📦 Plan: {plan['label']}\n💰 Amount: ₹{plan['price']}\n🆔 Order: `{order_id}`\n\nApprove: `/approve {uid} {plan['days']}`\nReset: `/reset {uid}`"
+        # Admin ko bhejo
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Admin send fail: {e}")
+        # Backup Vault me bhi bhejo
+        try:
+            await context.bot.send_message(chat_id=VAULT_ID, text=admin_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Vault send fail: {e}")
         await context.bot.send_message(chat_id=q.from_user.id, text="✅ *Payment Request Sent!*\n\nAdmin 2-3 min me approve kar dega. Thoda wait karo bhai.", parse_mode="Markdown")
     elif data == "my_profile":
         is_prem = user['premium_until'] > time.time()
@@ -143,11 +152,33 @@ async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = load_db()
         if tid not in db: db[tid] = {"free_used":0,"premium_until":0,"videos":[]}
         db[tid]['premium_until'] = time.time() + days*86400
+        db[tid]['free_used'] = 0
         save_db(db)
-        await update.message.reply_text(f"✅ Approved {tid} for {days} days")
-        await context.bot.send_message(chat_id=int(tid), text=f"🎉 *Premium Activated!*\n{days} days ke liye active ho gaya! Ab unlimited download karo 🔥", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Approved {tid} for {days} days - Saved!")
+        try:
+            await context.bot.send_message(chat_id=int(tid), text=f"🎉 *Premium Activated!*\n{days} days ke liye active ho gaya! Ab unlimited download karo 🔥", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"Note: User ko DM nahi gaya (usne /start nahi kiya) - {e}\nLekin Premium ON ho gaya hai.")
     except Exception as e:
         await update.message.reply_text(f"Use: /approve user_id days\nError: {e}")
+
+async def myid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Your ID: `{update.effective_user.id}`\nAdmin ID: `{ADMIN_ID}`", parse_mode="Markdown")
+
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id!= ADMIN_ID: return
+    try:
+        tid = str(context.args[0])
+        db = load_db()
+        if tid in db:
+            db[tid]['free_used'] = 0
+            db[tid]['premium_until'] = 0
+            save_db(db)
+            await update.message.reply_text(f"✅ Reset done for {tid} - Now 0/2")
+        else:
+            await update.message.reply_text("User not found in DB - New user will be 0/2")
+    except Exception as e:
+        await update.message.reply_text(f"Use: /reset user_id\nError: {e}")
 
 async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_user.id)
@@ -165,7 +196,6 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "http" not in url: return
     msg = await update.message.reply_text("⏳ *Downloading... Please wait*", parse_mode="Markdown")
 
-    # YOUTUBE FINAL FIX 2026 - Cookies + Android Client + Deno
     ydl_opts = {
         'cookiefile': 'youtube_cookies.txt',
         'format': 'best[height<=720]',
@@ -203,6 +233,8 @@ def main():
     keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("myid", myid_cmd))
+    app.add_handler(CommandHandler("reset", reset_cmd))
     app.add_handler(CommandHandler("approve", approve_cmd))
     app.add_handler(CallbackQueryHandler(cb_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))

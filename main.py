@@ -114,12 +114,10 @@ Pay karke *I Have Paid* dabao.
         _, order_id, key = data.split("_")
         plan = PLANS[key]
         admin_msg = f"💰 *New Payment Alert!*\n\n👤 User: {q.from_user.first_name} (`{uid}`)\n📦 Plan: {plan['label']}\n💰 Amount: ₹{plan['price']}\n🆔 Order: `{order_id}`\n\nApprove: `/approve {uid} {plan['days']}`\nReset: `/reset {uid}`"
-        # Admin ko bhejo
         try:
             await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
         except Exception as e:
             print(f"Admin send fail: {e}")
-        # Backup Vault me bhi bhejo
         try:
             await context.bot.send_message(chat_id=VAULT_ID, text=admin_msg, parse_mode="Markdown")
         except Exception as e:
@@ -196,24 +194,36 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "http" not in url: return
     msg = await update.message.reply_text("⏳ *Downloading... Please wait*", parse_mode="Markdown")
 
-    ydl_opts = {
-        'cookiefile': 'youtube_cookies.txt',
-        'format': 'best[height<=720]',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web'],
-                'player_skip': ['webpage'],
-            },
-        },
-        'js_runtimes': {'deno': {}},
+    # --- UNIVERSAL FIX FOR FB / INSTA / YT ---
+    base_opts = {
+        'outtmpl': '%(id)s.%(ext)s',
+        'noplaylist': True,
         'nocheckcertificate': True,
         'quiet': True,
+        'merge_output_format': 'mp4',
+        'js_runtimes': {'deno': {}},
+        'extractor_args': {
+            'youtube': {'player_client': ['android', 'web'], 'player_skip': ['webpage']},
+        }
     }
+    if os.path.exists('youtube_cookies.txt'):
+        base_opts['cookiefile'] = 'youtube_cookies.txt'
+
+    # FB ke liye best*+bestaudio fail hota hai, isiliye generic best use karo
+    ydl_opts = {**base_opts, 'format': 'bestvideo+bestaudio/best'}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            if not os.path.exists(filename):
+                # mp4 me merge hua hai
+                filename = filename.rsplit('.', 1)[0] + '.mp4'
+                if not os.path.exists(filename):
+                    # koi bhi mp4 file dhoondo
+                    import glob
+                    files = glob.glob("*.mp4")
+                    if files: filename = files[0]
 
         sent = await context.bot.send_video(chat_id=VAULT_ID, video=open(filename,'rb'), caption=f"User:{uid}\n{url}")
         await context.bot.send_video(chat_id=update.effective_user.id, video=sent.video.file_id, caption="✅ *Here is your video! Saved in Vault 🗃️*", parse_mode="Markdown")
@@ -226,8 +236,31 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
-        print(f"Error: {e}")
-        await msg.edit_text(f"❌ *Download Fail:* {str(e)[:300]}")
+        print(f"Error main: {e}")
+        # Fallback 2 - Sabse simple format, FB ke liye 100% kaam karta hai
+        try:
+            await msg.edit_text("⚠️ HD fail, trying SD...")
+            ydl_opts2 = {**base_opts, 'format': 'b'}
+            with yt_dlp.YoutubeDL(ydl_opts2) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                if not os.path.exists(filename):
+                    import glob
+                    files = glob.glob("*.mp4") + glob.glob("*.mkv") + glob.glob("*.webm")
+                    if files: filename = files[0]
+
+            sent = await context.bot.send_video(chat_id=VAULT_ID, video=open(filename,'rb'), caption=f"User:{uid}\n{url}")
+            await context.bot.send_video(chat_id=update.effective_user.id, video=sent.video.file_id, caption="✅ *Here is your video!*", parse_mode="Markdown")
+
+            db = load_db()
+            db[uid]['videos'].append(url)
+            if not is_prem: db[uid]['free_used'] += 1
+            save_db(db)
+            await msg.delete()
+            if os.path.exists(filename): os.remove(filename)
+        except Exception as e2:
+            print(f"Error fallback: {e2}")
+            await msg.edit_text(f"❌ *Download Fail:* {str(e2)[:300]}")
 
 def main():
     keep_alive()
@@ -238,7 +271,7 @@ def main():
     app.add_handler(CommandHandler("approve", approve_cmd))
     app.add_handler(CallbackQueryHandler(cb_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
-    print("Bot Started with YouTube Fix...")
+    print("Bot Started with Facebook Fix...")
     app.run_polling()
 
 if __name__ == "__main__":

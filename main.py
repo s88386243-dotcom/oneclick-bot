@@ -1,25 +1,23 @@
 import os, json, time, random, qrcode, yt_dlp
 from flask import Flask
 from threading import Thread
-
-app_flask = Flask('')
-
-@app_flask.route('/')
-def home():
-    return "OneClick Bot is Alive! ✅"
-
-def run_flask():
-    app_flask.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
-
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.start()
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
+# --- FLASK KEEP ALIVE FOR RENDER ---
+app_flask = Flask('')
+@app_flask.route('/')
+def home():
+    return "OneClick Bot is Alive! ✅"
+def run_flask():
+    app_flask.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.start()
+
 # --- CONFIG ---
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "8773409457:AAFtEMf4Nyuz3bun00jbuwoop2S2CmVY5S0" # Yahan apna naya token daal dena
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "8773409457:AAFtEMf4Nyuz3bun00jbuwoop2S2CmVY5S0"
 ADMIN_ID = 7166502503
 VAULT_ID = -1004353152847
 UPI_ID = "s.maddheshia@ptaxis"
@@ -167,21 +165,19 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "http" not in url: return
     msg = await update.message.reply_text("⏳ *Downloading... Please wait*", parse_mode="Markdown")
 
-    # YOUTUBE FINAL FIX 2026 - Player 9f4cc5e4 + PO Token + Deno
+    # YOUTUBE FINAL FIX 2026 - Cookies + Android Client + Deno
     ydl_opts = {
-        'format': 'bv*[height<=720]+ba/best[height<=720]/best',
-        'outtmpl': '%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'geo_bypass': True,
+        'cookiefile': 'youtube_cookies.txt',
+        'format': 'best[height<=720]',
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web'],
                 'player_skip': ['webpage'],
-            }
+            },
         },
         'js_runtimes': {'deno': {}},
+        'nocheckcertificate': True,
+        'quiet': True,
     }
 
     try:
@@ -204,6 +200,7 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ *Download Fail:* {str(e)[:300]}")
 
 def main():
+    keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("approve", approve_cmd))
@@ -214,12 +211,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-def main():
-    keep_alive() # <-- ye line add karni hai sabse upar
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("approve", approve_cmd))
-    app.add_handler(CallbackQueryHandler(cb_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
-    print("Bot Started with YouTube Fix...")
-    app.run_polling()

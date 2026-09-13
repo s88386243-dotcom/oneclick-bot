@@ -199,3 +199,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+def main():
+    keep_alive() # <-- ye line add karni hai sabse upar
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("approve", approve_cmd))
+    app.add_handler(CallbackQueryHandler(cb_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
+    print("Bot Started with YouTube Fix...")
+    app.run_polling()

@@ -17,11 +17,16 @@ def keep_alive():
     t.start()
 
 # --- CONFIG ---
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "8773409457:AAFtEMf4Nyuz3bun00jbuwoop2S2CmVY5S0"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    # Fallback sirf local test ke liye, Render pe ENV var use hoga
+    BOT_TOKEN = "REPLACE_WITH_ENV_TOKEN"
+
 ADMIN_ID = 7166502503
 VAULT_ID = -1004353152847
 UPI_ID = "s.maddheshia@ptaxis"
 DB_FILE = "database.json"
+FREE_LIMIT = 5 # <-- Yahan 5 kar diya
 
 PLANS = {
     "1day": {"price": 10, "days": 1, "label": "1 Day - ₹10"},
@@ -52,12 +57,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_user.id)
     user = get_user(uid)
     is_prem = user['premium_until'] > time.time()
-    free_left = 2 - user['free_used']
+    free_left = FREE_LIMIT - user['free_used']
     if is_prem:
         exp = datetime.fromtimestamp(user['premium_until']).strftime("%d-%m-%Y")
         plan_text = f"🔥 PREMIUM Active till {exp}"
     else:
-        plan_text = f"Free Member ({max(0,free_left)}/2 left)"
+        plan_text = f"Free Member ({max(0,free_left)}/{FREE_LIMIT} left)"
     text = f"""
 👋 *Welcome {update.effective_user.first_name}!*
 
@@ -84,7 +89,7 @@ async def cb_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "go_premium":
         kb = [[InlineKeyboardButton(v['label'], callback_data=f"buy_{k}")] for k,v in PLANS.items()]
         kb.append([InlineKeyboardButton("⬅️ Back to Home", callback_data="back_home")])
-        await q.edit_message_text("💎 *Unlock Premium - Unlimited Downloads*\n\nSelect Plan 👇\nUPI: `s.maddheshia@ptaxis`", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        await q.edit_message_text(f"💎 *Unlock Premium - Unlimited Downloads*\n\nSelect Plan 👇\nUPI: `{UPI_ID}`", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
     elif data.startswith("buy_"):
         key = data.split("_")[1]
         plan = PLANS[key]
@@ -126,7 +131,7 @@ Pay karke *I Have Paid* dabao.
     elif data == "my_profile":
         is_prem = user['premium_until'] > time.time()
         exp = datetime.fromtimestamp(user['premium_until']).strftime("%d-%m-%Y %H:%M") if is_prem else "Not Active"
-        txt = f"👤 *My Profile*\n\n🆔 ID: `{uid}`\n💎 Status: {'🔥 PREMIUM till '+exp if is_prem else 'Free (2/2 limit)'}\n🎬 Used: {user['free_used']}/2\n🗃️ Saved: {len(user['videos'])}"
+        txt = f"👤 *My Profile*\n\n🆔 ID: `{uid}`\n💎 Status: {'🔥 PREMIUM till '+exp if is_prem else f'Free ({FREE_LIMIT}/{FREE_LIMIT} limit)'}\n🎬 Used: {user['free_used']}/{FREE_LIMIT}\n🗃️ Saved: {len(user['videos'])}"
         await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_home")]]), parse_mode="Markdown")
     elif data == "my_vault":
         if not user['videos']:
@@ -172,9 +177,9 @@ async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db[tid]['free_used'] = 0
             db[tid]['premium_until'] = 0
             save_db(db)
-            await update.message.reply_text(f"✅ Reset done for {tid} - Now 0/2")
+            await update.message.reply_text(f"✅ Reset done for {tid} - Now 0/{FREE_LIMIT}")
         else:
-            await update.message.reply_text("User not found in DB - New user will be 0/2")
+            await update.message.reply_text(f"User not found in DB - New user will be 0/{FREE_LIMIT}")
     except Exception as e:
         await update.message.reply_text(f"Use: /reset user_id\nError: {e}")
 
@@ -185,16 +190,15 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db[uid]
     is_prem = user['premium_until'] > time.time()
 
-    if not is_prem and user['free_used'] >= 2:
+    if not is_prem and user['free_used'] >= FREE_LIMIT:
         kb = [[InlineKeyboardButton("🚀 Buy Premium ₹10", callback_data="go_premium")]]
-        await update.message.reply_text("❌ *Free Limit Over! 2/2 Used*\n\nPremium lo unlimited ke liye 👇", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        await update.message.reply_text(f"❌ *Free Limit Over! {FREE_LIMIT}/{FREE_LIMIT} Used*\n\nPremium lo unlimited ke liye 👇", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         return
 
     url = update.message.text.strip()
     if "http" not in url: return
     msg = await update.message.reply_text("⏳ *Downloading... Please wait*", parse_mode="Markdown")
 
-    # --- UNIVERSAL FIX FOR FB / INSTA / YT ---
     base_opts = {
         'outtmpl': '%(id)s.%(ext)s',
         'noplaylist': True,
@@ -209,7 +213,6 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if os.path.exists('youtube_cookies.txt'):
         base_opts['cookiefile'] = 'youtube_cookies.txt'
 
-    # FB ke liye best*+bestaudio fail hota hai, isiliye generic best use karo
     ydl_opts = {**base_opts, 'format': 'bestvideo+bestaudio/best'}
 
     try:
@@ -217,10 +220,8 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             if not os.path.exists(filename):
-                # mp4 me merge hua hai
                 filename = filename.rsplit('.', 1)[0] + '.mp4'
                 if not os.path.exists(filename):
-                    # koi bhi mp4 file dhoondo
                     import glob
                     files = glob.glob("*.mp4")
                     if files: filename = files[0]
@@ -237,7 +238,6 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Error main: {e}")
-        # Fallback 2 - Sabse simple format, FB ke liye 100% kaam karta hai
         try:
             await msg.edit_text("⚠️ HD fail, trying SD...")
             ydl_opts2 = {**base_opts, 'format': 'b'}
@@ -271,7 +271,7 @@ def main():
     app.add_handler(CommandHandler("approve", approve_cmd))
     app.add_handler(CallbackQueryHandler(cb_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
-    print("Bot Started with Facebook Fix...")
+    print(f"Bot Started - Free Limit {FREE_LIMIT}")
     app.run_polling()
 
 if __name__ == "__main__":

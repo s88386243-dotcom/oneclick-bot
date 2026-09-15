@@ -1,277 +1,32 @@
-import os, json, time, random, qrcode, yt_dlp
-from flask import Flask
-from threading import Thread
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+import os, requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- FLASK KEEP ALIVE FOR RENDER ---
-app_flask = Flask('')
-@app_flask.route('/')
-def home():
-    return "OneClick Bot is Alive! ✅"
-def run_flask():
-    app_flask.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.start()
-
-# --- CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    # Fallback sirf local test ke liye, Render pe ENV var use hoga
-    BOT_TOKEN = "REPLACE_WITH_ENV_TOKEN"
-
-ADMIN_ID = 7166502503
-VAULT_ID = -1004353152847
-UPI_ID = "s.maddheshia@ptaxis"
-DB_FILE = "database.json"
-FREE_LIMIT = 5 # <-- Yahan 5 kar diya
-
-PLANS = {
-    "1day": {"price": 10, "days": 1, "label": "1 Day - ₹10"},
-    "1week": {"price": 30, "days": 7, "label": "1 Week - ₹30"},
-    "1month": {"price": 69, "days": 30, "label": "1 Month - ₹69"},
-    "2month": {"price": 150, "days": 60, "label": "2 Months - ₹150"}
-}
-
-def load_db():
-    if not os.path.exists(DB_FILE): return {}
-    try:
-        with open(DB_FILE, 'r') as f: return json.load(f)
-    except: return {}
-
-def save_db(data):
-    with open(DB_FILE, 'w') as f: json.dump(data, f, indent=2)
-
-def get_user(uid):
-    db = load_db()
-    uid = str(uid)
-    if uid not in db:
-        db[uid] = {"free_used": 0, "premium_until": 0, "videos": []}
-        save_db(db)
-        return db[uid]
-    return db[uid]
+BACKEND_URL = os.getenv("BACKEND_URL", "https://oneclick-backend-6g5a.onrender.com")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = str(update.effective_user.id)
-    user = get_user(uid)
-    is_prem = user['premium_until'] > time.time()
-    free_left = FREE_LIMIT - user['free_used']
-    if is_prem:
-        exp = datetime.fromtimestamp(user['premium_until']).strftime("%d-%m-%Y")
-        plan_text = f"🔥 PREMIUM Active till {exp}"
-    else:
-        plan_text = f"Free Member ({max(0,free_left)}/{FREE_LIMIT} left)"
-    text = f"""
-👋 *Welcome {update.effective_user.first_name}!*
+    await update.message.reply_text("Link bhejo - 1800+ Sites Supported 🔥")
 
-⚡️ *OneClick Vault Pro - Fastest Downloader*
-
-👤 Name: {update.effective_user.first_name}
-💎 Plan: {plan_text}
-🗃️ Vault: {len(user['videos'])} videos
-
-*Just send any Insta / FB / YT link, I'll download it!*
-"""
-    kb = [
-        [InlineKeyboardButton("🚀 Unlock Premium", callback_data="go_premium")],
-        [InlineKeyboardButton("🗃️ My Vault", callback_data="my_vault"), InlineKeyboardButton("👤 My Profile", callback_data="my_profile")]
-    ]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-async def cb_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    uid = str(q.from_user.id)
-    data = q.data
-    user = get_user(uid)
-    if data == "go_premium":
-        kb = [[InlineKeyboardButton(v['label'], callback_data=f"buy_{k}")] for k,v in PLANS.items()]
-        kb.append([InlineKeyboardButton("⬅️ Back to Home", callback_data="back_home")])
-        await q.edit_message_text(f"💎 *Unlock Premium - Unlimited Downloads*\n\nSelect Plan 👇\nUPI: `{UPI_ID}`", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-    elif data.startswith("buy_"):
-        key = data.split("_")[1]
-        plan = PLANS[key]
-        order_id = f"OC{random.randint(10000,99999)}"
-        upi_link = f"upi://pay?pa={UPI_ID}&pn=OneClick&am={plan['price']}&cu=INR&tn={order_id}"
-        img = qrcode.make(upi_link)
-        img.save(f"{order_id}.png")
-        caption = f"""
-🧾 *Payment Invoice*
-
-📦 Plan: {plan['label']}
-💰 Amount: *₹{plan['price']}*
-🆔 Order ID: `{order_id}`
-⏳ Valid: 2 Minutes
-💳 UPI: `{UPI_ID}`
-
-⚠️ *Exact amount pay karo, warna approve nahi hoga.*
-Pay karke *I Have Paid* dabao.
-"""
-        kb = [[InlineKeyboardButton("✅ I Have Paid", callback_data=f"paid_{order_id}_{key}")],[InlineKeyboardButton("❌ Cancel", callback_data="go_premium")]]
-        try:
-            await context.bot.send_photo(chat_id=q.from_user.id, photo=open(f"{order_id}.png",'rb'), caption=caption, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-            os.remove(f"{order_id}.png")
-        except:
-            await q.edit_message_text(caption, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-    elif data.startswith("paid_"):
-        _, order_id, key = data.split("_")
-        plan = PLANS[key]
-        admin_msg = f"💰 *New Payment Alert!*\n\n👤 User: {q.from_user.first_name} (`{uid}`)\n📦 Plan: {plan['label']}\n💰 Amount: ₹{plan['price']}\n🆔 Order: `{order_id}`\n\nApprove: `/approve {uid} {plan['days']}`\nReset: `/reset {uid}`"
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
-        except Exception as e:
-            print(f"Admin send fail: {e}")
-        try:
-            await context.bot.send_message(chat_id=VAULT_ID, text=admin_msg, parse_mode="Markdown")
-        except Exception as e:
-            print(f"Vault send fail: {e}")
-        await context.bot.send_message(chat_id=q.from_user.id, text="✅ *Payment Request Sent!*\n\nAdmin 2-3 min me approve kar dega. Thoda wait karo bhai.", parse_mode="Markdown")
-    elif data == "my_profile":
-        is_prem = user['premium_until'] > time.time()
-        exp = datetime.fromtimestamp(user['premium_until']).strftime("%d-%m-%Y %H:%M") if is_prem else "Not Active"
-        txt = f"👤 *My Profile*\n\n🆔 ID: `{uid}`\n💎 Status: {'🔥 PREMIUM till '+exp if is_prem else f'Free ({FREE_LIMIT}/{FREE_LIMIT} limit)'}\n🎬 Used: {user['free_used']}/{FREE_LIMIT}\n🗃️ Saved: {len(user['videos'])}"
-        await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_home")]]), parse_mode="Markdown")
-    elif data == "my_vault":
-        if not user['videos']:
-            await q.edit_message_text("🗃️ *Vault Empty!*\nKoi video save nahi hai abhi.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_home")]]), parse_mode="Markdown")
-        else:
-            last = "\n".join([f"{i+1}. {v[:50]}" for i,v in enumerate(user['videos'][-5:])])
-            await q.edit_message_text(f"🗃️ *My Vault - {len(user['videos'])} Videos*\n\nLast 5:\n{last}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_home")]]), parse_mode="Markdown")
-    elif data == "back_home":
-        is_prem = user['premium_until'] > time.time()
-        exp = datetime.fromtimestamp(user['premium_until']).strftime("%d-%m-%Y") if is_prem else "Free"
-        text = f"👋 *Welcome {q.from_user.first_name}!*\n\n💎 Plan: {exp}\nJust send any link!"
-        kb = [[InlineKeyboardButton("🚀 Unlock Premium", callback_data="go_premium")],[InlineKeyboardButton("🗃️ My Vault", callback_data="my_vault"), InlineKeyboardButton("👤 My Profile", callback_data="my_profile")]]
-        try:
-            await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-        except: pass
-
-async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id!= ADMIN_ID: return
-    try:
-        tid = str(context.args[0]); days = int(context.args[1])
-        db = load_db()
-        if tid not in db: db[tid] = {"free_used":0,"premium_until":0,"videos":[]}
-        db[tid]['premium_until'] = time.time() + days*86400
-        db[tid]['free_used'] = 0
-        save_db(db)
-        await update.message.reply_text(f"✅ Approved {tid} for {days} days - Saved!")
-        try:
-            await context.bot.send_message(chat_id=int(tid), text=f"🎉 *Premium Activated!*\n{days} days ke liye active ho gaya! Ab unlimited download karo 🔥", parse_mode="Markdown")
-        except Exception as e:
-            await update.message.reply_text(f"Note: User ko DM nahi gaya (usne /start nahi kiya) - {e}\nLekin Premium ON ho gaya hai.")
-    except Exception as e:
-        await update.message.reply_text(f"Use: /approve user_id days\nError: {e}")
-
-async def myid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Your ID: `{update.effective_user.id}`\nAdmin ID: `{ADMIN_ID}`", parse_mode="Markdown")
-
-async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id!= ADMIN_ID: return
-    try:
-        tid = str(context.args[0])
-        db = load_db()
-        if tid in db:
-            db[tid]['free_used'] = 0
-            db[tid]['premium_until'] = 0
-            save_db(db)
-            await update.message.reply_text(f"✅ Reset done for {tid} - Now 0/{FREE_LIMIT}")
-        else:
-            await update.message.reply_text(f"User not found in DB - New user will be 0/{FREE_LIMIT}")
-    except Exception as e:
-        await update.message.reply_text(f"Use: /reset user_id\nError: {e}")
-
-async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = str(update.effective_user.id)
-    db = load_db()
-    if uid not in db: db[uid] = {"free_used":0,"premium_until":0,"videos":[]}
-    user = db[uid]
-    is_prem = user['premium_until'] > time.time()
-
-    if not is_prem and user['free_used'] >= FREE_LIMIT:
-        kb = [[InlineKeyboardButton("🚀 Buy Premium ₹10", callback_data="go_premium")]]
-        await update.message.reply_text(f"❌ *Free Limit Over! {FREE_LIMIT}/{FREE_LIMIT} Used*\n\nPremium lo unlimited ke liye 👇", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-        return
-
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
-    if "http" not in url: return
-    msg = await update.message.reply_text("⏳ *Downloading... Please wait*", parse_mode="Markdown")
-
-    base_opts = {
-        'outtmpl': '%(id)s.%(ext)s',
-        'noplaylist': True,
-        'nocheckcertificate': True,
-        'quiet': True,
-        'merge_output_format': 'mp4',
-        'js_runtimes': {'deno': {}},
-        'extractor_args': {
-            'youtube': {'player_client': ['android', 'web'], 'player_skip': ['webpage']},
-        }
-    }
-    if os.path.exists('youtube_cookies.txt'):
-        base_opts['cookiefile'] = 'youtube_cookies.txt'
-
-    ydl_opts = {**base_opts, 'format': 'bestvideo+bestaudio/best'}
-
+    if not url.startswith("http"): return
+    msg = await update.message.reply_text("⏳ Backend se fetch kar raha hu...")
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            if not os.path.exists(filename):
-                filename = filename.rsplit('.', 1)[0] + '.mp4'
-                if not os.path.exists(filename):
-                    import glob
-                    files = glob.glob("*.mp4")
-                    if files: filename = files[0]
-
-        sent = await context.bot.send_video(chat_id=VAULT_ID, video=open(filename,'rb'), caption=f"User:{uid}\n{url}")
-        await context.bot.send_video(chat_id=update.effective_user.id, video=sent.video.file_id, caption="✅ *Here is your video! Saved in Vault 🗃️*", parse_mode="Markdown")
-
-        db = load_db()
-        db[uid]['videos'].append(url)
-        if not is_prem: db[uid]['free_used'] += 1
-        save_db(db)
-        await msg.delete()
-        if os.path.exists(filename): os.remove(filename)
-
-    except Exception as e:
-        print(f"Error main: {e}")
-        try:
-            await msg.edit_text("⚠️ HD fail, trying SD...")
-            ydl_opts2 = {**base_opts, 'format': 'b'}
-            with yt_dlp.YoutubeDL(ydl_opts2) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                if not os.path.exists(filename):
-                    import glob
-                    files = glob.glob("*.mp4") + glob.glob("*.mkv") + glob.glob("*.webm")
-                    if files: filename = files[0]
-
-            sent = await context.bot.send_video(chat_id=VAULT_ID, video=open(filename,'rb'), caption=f"User:{uid}\n{url}")
-            await context.bot.send_video(chat_id=update.effective_user.id, video=sent.video.file_id, caption="✅ *Here is your video!*", parse_mode="Markdown")
-
-            db = load_db()
-            db[uid]['videos'].append(url)
-            if not is_prem: db[uid]['free_used'] += 1
-            save_db(db)
+        r = requests.post(f"{BACKEND_URL}/api/download", json={"url": url, "device_id": str(update.effective_user.id)}, timeout=120)
+        data = r.json()
+        if data.get("download_url"):
+            await update.message.reply_video(video=data["download_url"], caption=f"{data.get('title','Your Video')} ✅")
             await msg.delete()
-            if os.path.exists(filename): os.remove(filename)
-        except Exception as e2:
-            print(f"Error fallback: {e2}")
-            await msg.edit_text(f"❌ *Download Fail:* {str(e2)[:300]}")
+        else:
+            await msg.edit_text(f"❌ Fail: {data.get('error')}")
+    except Exception as e:
+        await msg.edit_text(f"❌ Error: {e}")
 
 def main():
-    keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("myid", myid_cmd))
-    app.add_handler(CommandHandler("reset", reset_cmd))
-    app.add_handler(CommandHandler("approve", approve_cmd))
-    app.add_handler(CallbackQueryHandler(cb_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
-    print(f"Bot Started - Free Limit {FREE_LIMIT}")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.run_polling()
 
 if __name__ == "__main__":
